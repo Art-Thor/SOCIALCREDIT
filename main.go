@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"os/signal"
 	"strings"
 
 	"github.com/bwmarrin/discordgo"
@@ -39,18 +40,16 @@ func main() {
 		log.Fatalf("Error creating Discord session: %v", err)
 	}
 
-	session.AddHandler(func(s *discordgo.Session, m *discordgo.MessageCreate) {
-		messageHandler(s, m)
-		if err = session.Open(); err != nil {
-			log.Fatalf("Error opening connection: %v", err)
-		}
-		defer session.Close()
-
-		loadWords()
-
-		fmt.Println("Bot is running...")
-		select {}
-	})
+	session.AddHandler(messageHandler)
+	session.Close()
+	if err = session.Open(); err != nil {
+		log.Fatalf("Error opening connection: %v", err)
+	}
+	loadWords()
+	fmt.Println("Bot running....")
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+	<-c
 }
 
 func loadWords() {
@@ -62,6 +61,8 @@ func loadWords() {
 	if err := json.Unmarshal(data, &words); err != nil {
 		log.Fatalf("Error parsing words.json: %v", err)
 	}
+	fmt.Println(len(words.Bad))
+	fmt.Println(len(words.Good))
 }
 
 func messageHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
@@ -72,18 +73,20 @@ func messageHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 	score := 0
 
 	for _, word := range words.Bad {
+		fmt.Println(m.Content)
 		if strings.Contains(strings.ToLower(m.Content), word.Text) {
-			score += word.Price
-			s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("-%d social credit", word.Price))
+			score -= word.Price
+			s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("%d social credit", word.Price))
 		}
 	}
 
 	for _, word := range words.Good {
 		if strings.Contains(strings.ToLower(m.Content), word.Text) {
 			score += word.Price
-			s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("+%d social credit", word.Price))
+			s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("%d social credit", word.Price))
 		}
 	}
 
 	log.Printf("User %s received %d social credit", m.Author.Username, score)
+	fmt.Printf("User %s received %d social credit", m.Author.Username, score)
 }
