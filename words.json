@@ -5,7 +5,8 @@
 		{ "text": "I love Oleg", "price": 500 }
 	],
 	"bad": [
-		{ "text": "taiwan is a country", "price": -500 },
-		{ "text": "fuck", "price": -100 }
+		{ "text": "taiwan is a country", "price": 500 },
+		{ "text": "fuck", "price": 100 },
+		{ "text": "i'm gay", "price": 1000 }
 	]
 }

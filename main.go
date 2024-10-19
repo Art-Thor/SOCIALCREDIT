@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math"
 	"os"
 	"os/signal"
 	"strings"
@@ -26,6 +27,7 @@ type Words struct {
 
 var words Words
 var token string
+var userCredits = make(map[string]int)
 
 func main() {
 	err := godotenv.Load(".env")
@@ -41,12 +43,17 @@ func main() {
 	}
 
 	session.AddHandler(messageHandler)
-	session.Close()
-	if err = session.Open(); err != nil {
+
+	loadWords()
+	loadUserCredits()
+
+	err = session.Open()
+	if err != nil {
 		log.Fatalf("Error opening connection: %v", err)
 	}
-	loadWords()
-	fmt.Println("Bot running....")
+	defer session.Close()
+
+	fmt.Println("Bot is running...")
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
 	<-c
@@ -61,8 +68,33 @@ func loadWords() {
 	if err := json.Unmarshal(data, &words); err != nil {
 		log.Fatalf("Error parsing words.json: %v", err)
 	}
-	fmt.Println(len(words.Bad))
-	fmt.Println(len(words.Good))
+}
+
+func loadUserCredits() {
+	data, err := ioutil.ReadFile("userCredits.json")
+	if err != nil {
+		if os.IsNotExist(err) {
+			userCredits = make(map[string]int)
+			return
+		}
+		log.Fatalf("Error reading userCredits.json: %v", err)
+	}
+
+	if err := json.Unmarshal(data, &userCredits); err != nil {
+		log.Fatalf("Error parsing userCredits.json: %v", err)
+	}
+}
+
+func saveUserCredits() {
+	data, err := json.MarshalIndent(userCredits, "", "  ")
+	if err != nil {
+		log.Printf("Error marshaling userCredits: %v", err)
+		return
+	}
+
+	if err := ioutil.WriteFile("userCredits.json", data, 0644); err != nil {
+		log.Printf("Error writing userCredits.json: %v", err)
+	}
 }
 
 func messageHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
@@ -70,23 +102,62 @@ func messageHandler(s *discordgo.Session, m *discordgo.MessageCreate) {
 		return
 	}
 
-	score := 0
+	var score int
+	contentLower := strings.ToLower(m.Content)
+	reference := &discordgo.MessageReference{
+		MessageID: m.ID,
+		ChannelID: m.ChannelID,
+		GuildID:   m.GuildID,
+	}
 
+	// Check bad words
 	for _, word := range words.Bad {
-		fmt.Println(m.Content)
-		if strings.Contains(strings.ToLower(m.Content), word.Text) {
+		if strings.Contains(contentLower, strings.ToLower(word.Text)) {
 			score -= word.Price
-			s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("%d social credit", word.Price))
+			s.ChannelMessageSendReply(m.ChannelID, fmt.Sprintf("-%d social credit", word.Price), reference)
 		}
 	}
 
+	// Check good words
 	for _, word := range words.Good {
-		if strings.Contains(strings.ToLower(m.Content), word.Text) {
+		if strings.Contains(contentLower, strings.ToLower(word.Text)) {
 			score += word.Price
-			s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("%d social credit", word.Price))
+			s.ChannelMessageSendReply(m.ChannelID, fmt.Sprintf("+%d social credit", word.Price), reference)
 		}
 	}
 
-	log.Printf("User %s received %d social credit", m.Author.Username, score)
-	fmt.Printf("User %s received %d social credit", m.Author.Username, score)
+	userID := m.Author.ID
+	prevCredit := userCredits[userID]
+	userCredits[userID] += score
+	newCredit := userCredits[userID]
+
+	saveUserCredits()
+
+	// Check thresholds
+	prevThreshold := int(math.Floor(float64(prevCredit) / -1000.0))
+	newThreshold := int(math.Floor(float64(newCredit) / -1000.0))
+
+	if newThreshold > prevThreshold {
+		s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("%s, you have reached %d social credit! Threatening to send to gulag!", m.Author.Mention(), newCredit))
+	}
+
+	// Check for very low rating
+	if newCredit <= -5000 {
+		s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("%s, the prisoner has escaped! Return to the cell!", m.Author.Mention()))
+	}
+
+	// Check for the word "diggers"
+	if strings.Contains(contentLower, "diggers") {
+		file, err := os.Open("images/apes.jpg")
+		if err != nil {
+			log.Printf("Error opening image: %v", err)
+			return
+		}
+		defer file.Close()
+
+		_, err = s.ChannelFileSend(m.ChannelID, "apes.jpg", file)
+		if err != nil {
+			log.Printf("Error sending image: %v", err)
+		}
+	}
 }
