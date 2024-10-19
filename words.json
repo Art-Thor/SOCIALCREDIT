@@ -1,0 +1,10 @@
+{
+	"good": [
+		{ "text": "i love the government", "price": 1000 },
+		{ "text": "china is the best", "price": 500 }
+	],
+	"bad": [
+		{ "text": "taiwan is a country", "price": -500 },
+		{ "text": "fuck", "price": -100 }
+	]
+}
