@@ -6,5 +6,6 @@
 	"bad": [
 		{ "text": "taiwan is a country", "price": -500 },
 		{ "text": "fuck", "price": -100 }
+		{ "text": "I love Oleg", "price": -100 }
 	]
 }
